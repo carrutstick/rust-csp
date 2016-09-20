@@ -1,0 +1,6 @@
+[package]
+name = "ac3"
+version = "0.1.0"
+authors = ["Isaac Carruthers <isaac.carruther@gmail.com>"]
+
+[dependencies]
