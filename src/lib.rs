@@ -5,17 +5,19 @@ use std::collections::HashMap;
 use std::iter::Iterator;
 use std::rc::Rc;
 
+mod examples;
+
 #[derive(Clone)]
-struct CSP<K,V> where
+pub struct CSP<K,V> where
     K: std::cmp::Eq,
     K: std::hash::Hash,
     V: std::clone::Clone
 {
     vars: HashMap<K, DVar<V>>,
-    constrs: Vec<(K, K, Rc<Fn(V,V) -> bool>)>
+    constrs: Vec<(K, K, Rc<Fn(&V,&V) -> bool>)>
 }
 
-struct CSPSolution<K,V> where
+pub struct CSPSolution<K,V> where
     K: std::cmp::Eq,
     K: std::hash::Hash,
     V: std::clone::Clone
@@ -47,7 +49,7 @@ impl<K,V> CSP<K,V> where
         self.vars.insert(key, var);
     }
 
-    fn add_constr(&mut self, key1: K, key2: K, constr: Rc<Fn(V, V) -> bool>) {
+    fn add_constr(&mut self, key1: K, key2: K, constr: Rc<Fn(&V, &V) -> bool>) {
         self.constrs.push((key1, key2, constr));
     }
 
@@ -65,7 +67,7 @@ impl<K,V> CSP<K,V> where
                     let nopts = xvar.options.len();
                     for xo in xvar.options.iter() {
                         if self.vars.get(&y).unwrap().options.iter()
-                               .any(|y| cf(xo.clone(), y.clone())) {
+                               .any(|y| cf(xo, y)) {
                             goodopts.push(xo.clone());
                         }
                     }
@@ -178,12 +180,18 @@ impl <V> DVar<V> where V: std::clone::Clone {
         self.options.clear();
         self.options.push(opt);
     }
+
+    fn set(&mut self, what: &V) {
+        self.options.clear();
+        self.options.push(what.clone());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::CSP;
     use test::Bencher;
+    use super::examples;
     use std::rc::Rc;
 
     #[test]
@@ -191,8 +199,7 @@ mod tests {
         let mut csp = CSP::new();
         csp.add_var(1, vec![1,2]);
         csp.add_var(2, vec![1,2]);
-        let t1 = Rc::new(|x,_| x == 1);
-        csp.add_constr(1, 2, t1);
+        csp.add_constr(1, 2, Rc::new(|x,_| *x == 1));
         csp.reduce();
         let mut nsols = 0;
         for m in csp.solutions() {
@@ -206,16 +213,8 @@ mod tests {
 
     #[bench]
     fn eight_queens(b: &mut Bencher) {
-        let mut csp: CSP<i32, i32> = CSP::new();
-        for q in 1..9 { csp.add_var(q, (1..9).collect()) }
-        for i in 1i32..9 {
-            for j in 1i32..9 {
-                if i != j {
-                    csp.add_constr(i, j, Rc::new(|x,y| x != y));
-                    csp.add_constr(i, j, Rc::new(move |x,y| (x-y).abs() != (i-j).abs()));
-                }
-            }
-        }
+        let mut csp = examples::n_queens(8);
+
         assert!(!csp.reduce().unwrap());
         assert!(csp.vars.values().all(|d| d.options.len() == 8));
         assert!(!csp.reduce().unwrap());
@@ -228,6 +227,51 @@ mod tests {
                 if nsols > 1000 { break }
             }
             assert!(nsols == 92);
+        });
+    }
+
+    #[bench]
+    fn sudoku_1(b: &mut Bencher) {
+        let mut csp = examples::sudoku();
+        csp.vars.get_mut(&(2,2)).unwrap().set(&9);
+        csp.vars.get_mut(&(2,3)).unwrap().set(&6);
+        csp.vars.get_mut(&(2,4)).unwrap().set(&8);
+        csp.vars.get_mut(&(2,6)).unwrap().set(&2);
+        csp.vars.get_mut(&(2,7)).unwrap().set(&7);
+        csp.vars.get_mut(&(2,8)).unwrap().set(&4);
+        csp.vars.get_mut(&(3,2)).unwrap().set(&2);
+        csp.vars.get_mut(&(3,8)).unwrap().set(&6);
+        csp.vars.get_mut(&(4,2)).unwrap().set(&3);
+        csp.vars.get_mut(&(4,4)).unwrap().set(&2);
+        csp.vars.get_mut(&(4,6)).unwrap().set(&4);
+        csp.vars.get_mut(&(4,8)).unwrap().set(&5);
+        csp.vars.get_mut(&(6,2)).unwrap().set(&5);
+        csp.vars.get_mut(&(6,4)).unwrap().set(&1);
+        csp.vars.get_mut(&(6,6)).unwrap().set(&9);
+        csp.vars.get_mut(&(6,8)).unwrap().set(&3);
+        csp.vars.get_mut(&(7,2)).unwrap().set(&6);
+        csp.vars.get_mut(&(7,8)).unwrap().set(&8);
+        csp.vars.get_mut(&(8,2)).unwrap().set(&7);
+        csp.vars.get_mut(&(8,3)).unwrap().set(&3);
+        csp.vars.get_mut(&(8,4)).unwrap().set(&6);
+        csp.vars.get_mut(&(8,6)).unwrap().set(&8);
+        csp.vars.get_mut(&(8,7)).unwrap().set(&2);
+        csp.vars.get_mut(&(8,8)).unwrap().set(&9);
+
+        println!("");
+        b.iter(|| { assert!(csp.clone().reduce().unwrap()) });
+        let _ = csp.reduce();
+        for i in 1..10 { for j in 1..10 {
+                print!("{} ", csp.vars.get(&(i,j)).unwrap().options.len()); }
+            println!(""); }
+        println!("");
+        println!("{:?}", csp.vars.get(&(18,1)).unwrap().options);
+        assert!(false);
+            
+        b.iter(|| {
+            let mut nsols = 0;
+            for _ in csp.solutions() { nsols += 1; assert!(false) }
+            assert!(nsols == 1);
         });
     }
 }
